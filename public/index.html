@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>LucidDreamer OS | Vibe-Coder Edition</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-body: #0d1117;
+            --bg-panel: #161b22;
+            --bg-input: #010409;
+            --border: #30363d;
+            --text-main: #c9d1d9;
+            --text-dim: #8b949e;
+            --accent: #58a6ff;
+            --success: #2ea043;
+            --danger: #da3633;
+        }
+        body { margin: 0; font-family: -apple-system, sans-serif; background: var(--bg-body); color: var(--text-main); display: flex; height: 100vh; overflow: hidden; }
+
+        .sidebar { width: 300px; background: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+        .sidebar-header { padding: 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .contact-list { flex: 1; overflow-y: auto; padding: 10px; }
+        
+        /* Status Light */
+        .status-indicator { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 10px; color: var(--text-dim); }
+        .dot { width: 8px; height: 8px; border-radius: 50%; }
+        .dot.online { background: var(--success); box-shadow: 0 0 5px var(--success); }
+        .dot.offline { background: var(--danger); }
+
+        /* ... (Keep previous styles for contact-item, msg, etc.) ... */
+        .contact-item {
+            display: flex; align-items: center; gap: 10px; padding: 12px;
+            border-radius: 8px; cursor: pointer; transition: 0.2s;
+            margin-bottom: 5px; background: rgba(255,255,255,0.03);
+            border: 1px solid transparent;
+        }
+        .contact-item:hover { background: rgba(255,255,255,0.08); }
+        .contact-item.active { background: rgba(88, 166, 255, 0.1); border-color: var(--accent); }
+        .avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; color: white; }
+        .contact-info { flex: 1; overflow: hidden; }
+        .contact-name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .contact-model { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .agent-select { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+
+        .main { flex: 1; display: flex; flex-direction: column; position: relative; }
+        .chat-area { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
+        
+        .msg { max-width: 80%; padding: 12px 16px; border-radius: 12px; line-height: 1.5; animation: popIn 0.2s ease; word-wrap: break-word; }
+        @keyframes popIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        .msg.user { align-self: flex-end; background: #1f6feb; color: #051d36; border-bottom-right-radius: 2px; }
+        .msg.agent { align-self: flex-start; background: #21262d; border: 1px solid var(--border); border-bottom-left-radius: 2px; }
+        .msg-header { font-size: 11px; font-weight: bold; margin-bottom: 5px; display: flex; gap: 8px; align-items: center; }
+        .msg-color-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+        .controls { padding: 15px 20px; background: var(--bg-panel); border-top: 1px solid var(--border); display: flex; gap: 15px; align-items: center; }
+        .input-group { flex: 1; position: relative; }
+        .input-group input {
+            width: 100%; padding: 12px 40px 12px 15px; background: var(--bg-input);
+            border: 1px solid var(--border); color: var(--text-main); border-radius: 24px; font-size: 14px;
+        }
+        .input-group i { position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: var(--text-dim); }
+        .send-btn { background: var(--accent); border: none; color: white; padding: 0 20px; height: 44px; border-radius: 22px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        .send-btn:hover { filter: brightness(1.1); }
+
+        .toggle-btn { margin-right: 10px; padding: 8px 12px; background: #21262d; border:1px solid var(--border); border-radius: 6px; color: var(--text-dim); font-size: 12px; cursor: pointer; }
+        .toggle-btn.active { background: rgba(218, 153, 34, 0.2); color: var(--success); border-color: var(--success); }
+
+        /* Modal */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .modal { background: var(--bg-panel); width: 500px; border-radius: 12px; border: 1px solid var(--border); padding: 25px; max-height: 90vh; overflow-y: auto; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px; }
+        .full-width { grid-column: span 2; }
+        textarea { width: 100%; background: var(--bg-input); border: 1px solid var(--border); color: var(--text-main); padding: 10px; border-radius: 6px; min-height: 80px; font-family: inherit; }
+        input[type="range"] { width: 100%; accent-color: var(--accent); }
+        .mode-switch { display: flex; gap: 10px; margin-bottom: 15px; background: var(--bg-input); padding: 5px; border-radius: 6px; }
+        .mode-opt { flex: 1; text-align: center; padding: 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .mode-opt.selected { background: var(--accent); color: white; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h3>Agents</h3>
+            <!-- Ollama Status Indicator -->
+            <div class="status-indicator">
+                <div id="ollamaDot" class="dot offline"></div>
+                <span id="ollamaStatusText">Checking...</span>
+            </div>
+        </div>
+        
+        <button class="send-btn" style="width:100%; margin:10px; font-size:14px;" onclick="openModal()">+ Vibe-Code Agent</button>
+        
+        <div class="contact-list" id="contactList"></div>
+    </div>
+
+    <div class="main">
+        <div class="chat-area" id="chatLog"></div>
+        <div class="controls">
+            <button class="toggle-btn" id="breakdownToggle" onclick="toggleBreakdown()">
+                <i class="fas fa-sitemap"></i> Breakdown Mode: OFF
+            </button>
+            <div class="input-group">
+                <i class="fas fa-comment-alt"></i>
+                <input type="text" id="userInput" placeholder="Talk to selected agents..." onkeypress="if(event.key==='Enter') send()">
+            </div>
+            <button class="send-btn" onclick="send()"><i class="fas fa-paper-plane"></i></button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal">
+        <div class="modal">
+            <h2>Vibe-Code New Agent</h2>
+            <div class="form-grid">
+                <div class="full-width">
+                    <label>Agent Name</label>
+                    <input type="text" id="newAgentName" placeholder="e.g. Sarcastic Debugger">
+                </div>
+                <div>
+                    <label>Provider</label>
+                    <select id="newAgentProvider" onchange="updateModelDropdown(this.value)"><option>Loading...</option></select>
+                </div>
+                <div>
+                    <label>Model</label>
+                    <select id="newAgentModel"><option>Select Provider First</option></select>
+                </div>
+                <div>
+                    <label>Avatar Color</label>
+                    <input type="color" id="newAgentColor" value="#58a6ff">
+                </div>
+                <div class="full-width">
+                    <label>System Persona / Prompt</label>
+                    <textarea id="newAgentPrompt" placeholder="You are an expert in..."></textarea>
+                </div>
+                <div class="full-width">
+                    <label>Negative Constraints</label>
+                    <textarea id="newAgentNegative" placeholder="Never do..." style="min-height:50px"></textarea>
+                </div>
+                <div class="full-width">
+                    <label>Temperature (Creativity) <span id="tempVal">0.7</span></label>
+                    <input type="range" min="0" max="1" step="0.1" value="0.7" id="newAgentTemp" oninput="document.getElementById('tempVal').textContent=this.value">
+                </div>
+                <div class="full-width">
+                    <label>Default Workflow</label>
+                    <div class="mode-switch">
+                        <div class="mode-opt selected" id="workflowStd" onclick="setWorkflow('standard')">Standard</div>
+                        <div class="mode-opt" id="workflowBreak" onclick="setWorkflow('breakdown')">Recursive Breakdown</div>
+                    </div>
+                </div>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+                <button class="toggle-btn" onclick="closeModal()">Cancel</button>
+                <button class="send-btn" onclick="saveAgent()">Create Agent</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let allAgents = [];
+        let allProviders = [];
+        let availableModels = [];
+        let selectedAgents = [];
+        let breakdownMode = false;
+        let tempWorkflow = 'standard';
+
+        socket.on('connect', async () => {
+            console.log("Frontend connected");
+            await fetchModels(); // Try to get Ollama list
+            await fetchProviders(); // Get Config list
+            socket.emit('agentListUpdated', allAgents);
+        });
+
+        socket.on('agentListUpdated', (agents) => {
+            allAgents = agents;
+            renderContacts();
+        });
+
+        // 1. Fetch Ollama Models
+        async function fetchModels() {
+            const dot = document.getElementById('ollamaDot');
+            const text = document.getElementById('ollamaStatusText');
+            
+            try {
+                const res = await fetch('/api/ollama/models');
+                availableModels = await res.json();
+                
+                if (availableModels.length > 0) {
+                    dot.className = 'dot online';
+                    text.textContent = "Ollama Online";
+                } else {
+                    dot.className = 'dot offline';
+                    text.textContent = "Ollama Empty/Offline";
+                }
+            } catch (e) {
+                console.error("Failed to fetch models:", e);
+                dot.className = 'dot offline';
+                text.textContent = "Connection Failed";
+                alert("Failed to connect to Ollama. Check console logs for details.");
+            }
+        }
+
+        // 2. Fetch Configured Providers
+        async function fetchProviders() {
+            const res = await fetch('/api/config/providers');
+            allProviders = await res.json();
+            
+            const sel = document.getElementById('newAgentProvider');
+            sel.innerHTML = '';
+            allProviders.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = p.name;
+                sel.appendChild(opt);
+            });
+            
+            if(allProviders.length > 0) updateModelDropdown(allProviders[0].id);
+        }
+
+        function updateModelDropdown(providerId) {
+            const modelSel = document.getElementById('newAgentModel');
+            modelSel.innerHTML = '';
+            
+            const provider = allProviders.find(p => p.id === providerId);
+            if (!provider) return;
+
+            if (provider.id === 'ollama') {
+                if(availableModels.length > 0) {
+                    availableModels.forEach(m => {
+                        const opt = document.createElement('option');
+                        opt.value = m.name;
+                        opt.textContent = `${m.name} (${m.sizeGB}GB)`;
+                        modelSel.appendChild(opt);
+                    });
+                } else {
+                    modelSel.innerHTML = '<option>Ollama Offline</option>';
+                }
+            } else {
+                provider.models.forEach(mName => {
+                    const opt = document.createElement('option');
+                    opt.value = mName;
+                    opt.textContent = mName;
+                    modelSel.appendChild(opt);
+                });
+            }
+        }
+
+        function renderContacts() {
+            const list = document.getElementById('contactList');
+            list.innerHTML = '';
+            allAgents.forEach(agent => {
+                const div = document.createElement('div');
+                div.className = `contact-item ${selectedAgents.includes(agent.id) ? 'active' : ''}`;
+                div.onclick = (e) => toggleAgent(agent.id, e);
+                div.innerHTML = `
+                    <input type="checkbox" class="agent-select" ${selectedAgents.includes(agent.id) ? 'checked' : ''} onclick="event.stopPropagation(); toggleAgent('${agent.id}')">
+                    <div class="avatar" style="background:${agent.avatarColor}">${agent.name[0]}</div>
+                    <div class="contact-info">
+                        <div class="contact-name">${agent.name}</div>
+                        <div class="contact-model">${agent.model}</div>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function toggleAgent(id, e) {
+            if (selectedAgents.includes(id)) {
+                selectedAgents = selectedAgents.filter(a => a !== id);
+            } else {
+                selectedAgents.push(id);
+            }
+            renderContacts();
+        }
+
+        function toggleBreakdown() {
+            breakdownMode = !breakdownMode;
+            const btn = document.getElementById('breakdownToggle');
+            if(breakdownMode) {
+                btn.classList.add('active');
+                btn.innerHTML = `<i class="fas fa-sitemap"></i> Breakdown Mode: ON`;
+            } else {
+                btn.classList.remove('active');
+                btn.innerHTML = `<i class="fas fa-sitemap"></i> Breakdown Mode: OFF`;
+            }
+        }
+
+        function send() {
+            const input = document.getElementById('userInput');
+            const text = input.value.trim();
+            if(!text || selectedAgents.length === 0) {
+                if(selectedAgents.length === 0) alert("Select at least one agent from the sidebar!");
+                return;
+            }
+
+            addLog({ name: 'You', content: text, type: 'user' });
+            input.value = '';
+
+            socket.emit('startConversation', {
+                text: text,
+                activeAgentIds: selectedAgents,
+                conversationMode: breakdownMode ? 'breakdown' : 'standard'
+            });
+        }
+
+        socket.on('agentMessage', (data) => {
+            addLog({ ...data, type: 'agent' });
+        });
+        
+        socket.on('agentStatus', (data) => {
+            // Optional: Visual typing indicator
+        });
+
+        function addLog(data) {
+            const div = document.createElement('div');
+            div.className = `msg ${data.type}`;
+            if (data.type === 'agent') {
+                div.innerHTML = `
+                    <div class="msg-header"><div class="msg-color-dot" style="background:${data.color}"></div>${data.name}</div>
+                    ${data.content}
+                `;
+            } else {
+                div.textContent = data.content;
+            }
+            const log = document.getElementById('chatLog');
+            log.appendChild(div);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function openModal() { document.getElementById('modal').style.display = 'flex'; }
+        function closeModal() { document.getElementById('modal').style.display = 'none'; }
+        function setWorkflow(type) {
+            tempWorkflow = type;
+            document.getElementById('workflowStd').classList.toggle('selected', type === 'standard');
+            document.getElementById('workflowBreak').classList.toggle('selected', type === 'breakdown');
+        }
+
+        async function saveAgent() {
+            const providerId = document.getElementById('newAgentProvider').value;
+            const modelVal = document.getElementById('newAgentModel').value;
+            
+            if (!modelVal || modelVal === "Select Provider First" || modelVal === "Ollama Offline") {
+                alert("Cannot create agent: No valid model selected. Check Ollama connection.");
+                return;
+            }
+
+            const newAgent = {
+                name: document.getElementById('newAgentName').value,
+                model: modelVal,
+                systemPrompt: document.getElementById('newAgentPrompt').value,
+                temperature: document.getElementById('newAgentTemp').value,
+                negativePrompt: document.getElementById('newAgentNegative').value,
+                workflow: tempWorkflow,
+                avatarColor: document.getElementById('newAgentColor').value,
+                providerId: providerId
+            };
+
+            await fetch('/api/agents', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newAgent)
+            });
+            closeModal();
+        }
+    </script>
+</body>
+</html>
